@@ -1,6 +1,6 @@
-use std::{ collections::HashSet, error::Error, fs};
+use std::{ collections::{HashMap, HashSet}, error::Error, fs, io::Write, process::Command};
 
-use crate::{helper::Helper::CLI, rutewall::Rutewall::Rules};
+use crate::{helper::Helper::CLI, rutewall::Rutewall::{Mode, Rules, check_command}};
 
 use std::{fs::OpenOptions,io::{self, Read},os::unix::fs::OpenOptionsExt};
 
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>>{
     let rules = Rules::from_path(&clargs.path.unwrap());
     let allow_map:HashSet<String> = rules.allows.into_iter().collect();
     let deny_map:HashSet<String> = rules.deny.into_iter().collect();
-    let allow_map:HashSet<String> = rules.fs.into_iter().map(|x| x.path).collect();
+    let fs_map:HashMap<String,Mode> = rules.fs.into_iter().map(|x| (x.path,x.mode)).collect();
 
 
     let fifo_path = clargs.fifo.unwrap_or("/tmp/fifo".to_string());
@@ -36,37 +36,24 @@ fn main() -> Result<(), Box<dyn Error>>{
             return Err(Box::new(err));
         }
     }
-    let mut fifo = OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(&fifo_path)?;
+    let mut r_fifo = OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(&fifo_path)?;
+    let mut w_fifo = OpenOptions::new().write(true).custom_flags(libc::O_NONBLOCK).open(&fifo_path)?;
 
     let mut buf = [0u8; 4096];
     loop {
-        match fifo.read(&mut buf) {
+        match r_fifo.read(&mut buf) {
             Ok(0) => {std::thread::sleep(std::time::Duration::from_millis(10));}
             Ok(n) => {
-                // TODO:
-                let tokens = String::from_utf8(buf[..n].to_vec()).unwrap().split(" ").map(|x| x.to_string()).collect::<Vec<String>>();
-                for i in &tokens{
-
-
-                }
-
-
-
-                
-
-
-
+                let cmnd = String::from_utf8(buf[..n].to_vec()).unwrap();
+                let mssg = match check_command(&cmnd, &allow_map, &deny_map, &fs_map,rules.network){
+                    Ok(_) => {Command::new("bash").arg("-c").arg(cmnd).spawn()?;"Command Executed".to_string()},
+                    Err(y) => {y}
+                };
+                w_fifo.write_all(&mssg.as_bytes())?;
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {std::thread::sleep(std::time::Duration::from_millis(10));}
             Err(e) => return Err(Box::new(e)),
         }
     }
     
-
-
-
-
-
-
-Ok(())
 }

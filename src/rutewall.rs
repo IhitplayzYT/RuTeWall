@@ -1,8 +1,10 @@
 pub mod Rutewall{
-    use std::{fs::{self, File}, usize};
+    use std::fs;
 
+    use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
-   type Mode = u8; 
+   pub type Mode = u8; 
 
    #[derive(Debug,Clone)]
     pub struct FileSystem{
@@ -99,5 +101,126 @@ pub mod Rutewall{
     }
 
 
+    pub fn check_command(command: &str,allow_map:&HashSet<String>,deny_map:&HashSet<String>,fs: &HashMap<String,u8>,network:bool) -> Result<(), String> {
+        let tokens = tokenize(command)?;
+        if tokens.is_empty() {
+            return Err("Empty command".into());
+        }
+
+        for token in &tokens {
+            if is_shell_operator(token) {
+                return Err(format!(
+                    "shell operator not allowed: {token}"
+                ));
+            }
+        }
+        let executable = &tokens[0];
+
+        if has_prefix_rule(&deny_map,executable) {
+            return Err(format!("Command denied: {executable}"));
+        }
+
+        if !has_prefix_rule(&allow_map, executable) {
+            return Err(format!("Command not allowed: {executable}"));
+        }
+
+        if !network && uses_network(executable, &tokens[1..]) {
+            return Err(format!("Network access disabled: {executable}"));
+        }
+
+        for token in &tokens[1..] {
+            if looks_like_path(token) {
+                check_path(token,&fs)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn check_path(path: &str,fs_map: &HashMap<String,u8>) -> Result<(), String> {
+        let pth = Path::new(path);
+        let path = normalize_path(&pth);
+        if !fs_map.keys().any(|workspace| path.starts_with(workspace)){
+            return Err(format!("Filesystem access denied: {}",path.display()));
+        }
+        Ok(())
+    }
+
+    fn path_is_under(path: &Path,ws: &Path) -> bool {
+        path == ws || path.starts_with(ws)
+    }
+
+    fn looks_like_path(s: &str) -> bool {
+        let p = Path::new(s);
+        p.is_absolute() || s.starts_with("./") || s.starts_with("../") || s == "." || s == ".." || s.contains('/') || s.contains('\\')
+    }
+
+
+    fn normalize_path<P: AsRef<Path>>(path: &P) -> PathBuf {
+        let path = path.as_ref();
+        let mut result = PathBuf::new();
+        for component in path.components() {
+            match component {
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => {result.pop();}
+                component => {
+                    result.push(component.as_os_str());
+                }
+            }
+        }
+        result
+    }
+
+    fn is_shell_operator(token: &str) -> bool {
+        matches!(token,"|" | "||" | "&" | "&&" | ";" | "2>>")
+    }
+
+    fn tokenize(txt: &str) -> Result<Vec<String>, String> {
+        let mut result = Vec::new();
+        let mut current = String::new();
+        let mut quote: Option<char> = None;
+
+        for c in txt.chars() {
+            match quote {
+                Some(q) => {
+                    if c == q {
+                        quote = None;
+                    } else {
+                        current.push(c);
+                    }
+                }
+                None => match c {
+                    '\'' | '"' => {quote = Some(c);}
+                    ' ' | '\t' | '\n' => {
+                        if !current.is_empty() {
+                            result.push(current.clone());
+                        }
+                    }
+
+                    _ => current.push(c),
+                },
+            }
+        }
+
+        if quote.is_some() {
+            return Err("Unterminated quote".into());
+        }
+        if !current.is_empty() {
+            result.push(current);
+        }
+
+        Ok(result)
+    }
+
+
+    fn has_prefix_rule(rules: &HashSet<String>,command: &str) -> bool {
+        rules.iter().any(|prefix| {
+        command == prefix || command.starts_with(&format!("{prefix} "))
+        })
+    }
+
+    fn uses_network(command: &str, args: &[String]) -> bool {
+        matches!(command,"curl" | "wget" | "ssh" | "scp" | "sftp" | "nc" | "ncat" | "telnet" | "ftp" | "git")
+    }
 
 }
