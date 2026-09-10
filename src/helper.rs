@@ -28,15 +28,19 @@ pub mod Helper{
 
         pub fn Parse_Args(&mut self){
             let args: Vec<String> = std::env::args().skip(1).collect();
-            for i in args.iter().skip(1){
-                if i == "-d" || i == "--debug" || i == " --DEBUG" || i == "-D"{
+            for i in args.iter(){
+                if i == "-d" || i == "--debug" || i == "-D"{
                     self.dbg = true;
-                } else if i == "-h" || i == "--help" || i == " --HELP" || i == "-H"{
+                } else if i == "-h" || i == "--help" || i == "-H"{
                     Help();
-                } else if i.starts_with("--path=") || i.starts_with("--conf"){  
-                    self.path = Some(i[i.find("=").unwrap()+1..].to_string());
-                } else if i.starts_with("--fifo") || i.starts_with("--pipe"){
-                    self.fifo = Some(i[i.find("=").unwrap()+1..].to_string());
+                } else if i.starts_with("--path=") || i.starts_with("--conf="){
+                    if let Some(idx) = i.find("="){
+                        self.path = Some(i[idx+1..].to_string());
+                    }
+                } else if i.starts_with("--fifo=") || i.starts_with("--pipe="){
+                    if let Some(idx) = i.find("="){
+                        self.fifo = Some(i[idx+1..].to_string());
+                    }
                 }
                 else{
                     Help();

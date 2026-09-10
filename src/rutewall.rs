@@ -80,7 +80,7 @@ use std::path::{Path, PathBuf};
                         for z in perm_lists.split("=").map(|x| x.trim()){
                             if z.starts_with("["){
                                 if let Some(ed) = z.find("]"){
-                                    paths.append(&mut i[1..ed].split(",").map(|x| x.trim()).collect());
+                                    paths.append(&mut z[1..ed].split(",").map(|x| x.trim()).collect());
                                 }
                             }else{
                                 mode = parse_perms(z);
